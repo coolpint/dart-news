@@ -9,7 +9,7 @@
 2. 회사-시장 매핑으로 대상 시장(KOSPI/KOSDAQ) 공시 필터링
 3. 공시 유형/재무 단서 기반 중요도 스코어링
 4. 하루 Top1 기본, 조건 충족 시 Top2 선택
-5. 애널리스트/경제부 기자 스타일 기사 자동 작성
+5. 핵심 판단 근거/투자자 관점/전문가 인사이트/관련 뉴스 2건 링크 포함 기사 자동 작성
 6. 지정 Slack 채널로 자동 발행
 
 ## Project structure
@@ -18,6 +18,7 @@
 - `dart_digest/market_filter.py`: 시장 필터(KOSPI/KOSDAQ 등)
 - `dart_digest/scoring.py`: 중요도 평가
 - `dart_digest/article_writer.py`: 기사 생성 (OpenAI 옵션 + 템플릿 폴백)
+- `dart_digest/news_client.py`: 관련 뉴스 검색/요약 링크 수집
 - `dart_digest/slack_client.py`: Slack 전송
 - `dart_digest/pipeline.py`: 전체 오케스트레이션
 - `dart_digest/storage.py`: SQLite 저장(중복 방지/이력)

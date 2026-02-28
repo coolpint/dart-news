@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 
 import requests
 
 from dart_digest.config import Settings
 from dart_digest.models import ScoredDisclosure
+from dart_digest.news_client import NewsItem, search_related_news
 
 
 class ArticleWriter:
@@ -17,18 +19,40 @@ class ArticleWriter:
         if not selected:
             return "오늘은 분석 대상 공시가 없습니다."
 
+        news_map = self._collect_related_news(selected)
+
         article = ""
         if self.settings.openai_api_key:
-            article = self._write_with_openai(selected, run_dt)
+            article = self._write_with_openai(selected, run_dt, news_map)
 
         if not article:
-            article = self._write_template(selected, run_dt)
+            article = self._write_template(selected, run_dt, news_map)
 
         if not _passes_fact_gate(article, selected):
-            return self._write_template(selected, run_dt)
+            return self._write_template(selected, run_dt, news_map)
         return article
 
-    def _write_with_openai(self, selected: list[ScoredDisclosure], run_dt: datetime) -> str:
+    def _collect_related_news(
+        self,
+        selected: list[ScoredDisclosure],
+    ) -> dict[str, list[NewsItem]]:
+        news_map: dict[str, list[NewsItem]] = {}
+        for item in selected:
+            disclosure = item.disclosure
+            news_map[disclosure.receipt_no] = search_related_news(
+                company_name=disclosure.company_name,
+                disclosure_title=disclosure.title,
+                event_type=item.event_type,
+                max_items=2,
+            )
+        return news_map
+
+    def _write_with_openai(
+        self,
+        selected: list[ScoredDisclosure],
+        run_dt: datetime,
+        news_map: dict[str, list[NewsItem]],
+    ) -> str:
         system_prompt = (
             "당신은 한국 증권업계 셀사이드 애널리스트 출신의 경제부 베테랑 기자다. "
             "DART 공시를 바탕으로 중장기 가치 영향 중심의 심층 기사만 작성한다. "
@@ -41,7 +65,7 @@ class ArticleWriter:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": _build_user_prompt(selected, run_dt),
+                    "content": _build_user_prompt(selected, run_dt, news_map),
                 },
             ],
             "temperature": 0.2,
@@ -74,31 +98,39 @@ class ArticleWriter:
         except (TypeError, AttributeError):
             return ""
 
-    def _write_template(self, selected: list[ScoredDisclosure], run_dt: datetime) -> str:
+    def _write_template(
+        self,
+        selected: list[ScoredDisclosure],
+        run_dt: datetime,
+        news_map: dict[str, list[NewsItem]],
+    ) -> str:
         headline = _build_headline(selected)
         summary_lines = _build_summary(selected)
 
         body_blocks: list[str] = []
         for rank, item in enumerate(selected, start=1):
             disclosure = item.disclosure
+            sentiment, sentiment_reason = _investor_impact(item)
+            news_items = news_map.get(disclosure.receipt_no, [])
+
             body_blocks.append(
                 "\n".join(
                     [
                         f"## {rank}. {disclosure.company_name} - {item.event_type}",
-                        f"- 공시명: {disclosure.title}",
-                        f"- 접수번호: {disclosure.receipt_no}",
-                        f"- 링크: {disclosure.link}",
                         f"- 종합 중요도: {item.total_score:.1f} / 100",
-                        f"- 핵심 판단 근거: {' / '.join(item.reasons[:3])}",
                         "",
-                        "### 왜 중장기적으로 중요한가",
-                        _long_term_view(item),
+                        "### 핵심 판단 근거 (상세)",
+                        _detailed_rationale(item),
                         "",
-                        "### 시나리오 점검",
-                        _scenario_view(item),
+                        "### 투자자 관점 해석",
+                        f"- 판단: **{sentiment}**",
+                        f"- 해석: {sentiment_reason}",
                         "",
-                        "### 후속 체크포인트",
-                        _follow_up_view(item),
+                        "### 전문가 시각에서 본 큰 의미",
+                        _expert_insight(item),
+                        "",
+                        "### 관련 뉴스 요약",
+                        _related_news_summary(news_items, disclosure.company_name),
                     ]
                 )
             )
@@ -119,22 +151,38 @@ class ArticleWriter:
         ) + disclaimer
 
 
-def _build_user_prompt(selected: list[ScoredDisclosure], run_dt: datetime) -> str:
+def _build_user_prompt(
+    selected: list[ScoredDisclosure],
+    run_dt: datetime,
+    news_map: dict[str, list[NewsItem]],
+) -> str:
     facts = []
     for idx, item in enumerate(selected, start=1):
         d = item.disclosure
+        sentiment, sentiment_reason = _investor_impact(item)
         facts.append(
             {
                 "rank": idx,
                 "company": d.company_name,
                 "title": d.title,
-                "receipt_no": d.receipt_no,
-                "url": d.link,
                 "published_at": d.published_at.isoformat(timespec="seconds"),
                 "event_type": item.event_type,
                 "score": item.total_score,
                 "reasons": item.reasons,
                 "description": d.description,
+                "investor_view": {
+                    "label": sentiment,
+                    "reason": sentiment_reason,
+                },
+                "related_news": [
+                    {
+                        "title": n.title,
+                        "source": n.source,
+                        "published_at": n.published_at,
+                        "link": n.link,
+                    }
+                    for n in news_map.get(d.receipt_no, [])
+                ],
             }
         )
 
@@ -143,69 +191,182 @@ def _build_user_prompt(selected: list[ScoredDisclosure], run_dt: datetime) -> st
         "아래 공시 후보를 대상으로 심층 기사 작성:\n"
         f"```json\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n```\n"
         "요구사항:\n"
-        "1) 제목 1개, 3줄 요약, 본문(사실/해석 분리), 시나리오(Base/Bull/Bear), 후속 체크포인트를 포함\n"
-        "2) 접수번호와 원문 링크를 각 기업 섹션에 명시\n"
-        "3) 단기 주가 예측 대신 중장기 펀더멘털 관점으로 설명\n"
-        "4) 마지막에 투자권유 아님 면책 1문장\n"
+        "1) 제목 1개, 핵심요약 2줄, 본문(사실/해석 분리)을 포함\n"
+        "2) 공시명/접수번호를 나열하지 말고, 왜 경영/가치에 중요한지 구체적으로 설명\n"
+        "3) 투자자 관점에서 긍정/부정/중립 판단과 이유를 분명히 제시\n"
+        "4) 회사의 중립적 문구 뒤에 숨은 회계/자본배분/리스크 의미를 전문가 시각으로 해석\n"
+        "5) '관련 뉴스 요약' 섹션에서 제공된 링크만 사용해 최대 2개 기사 요약과 링크 제시\n"
+        "6) 마지막에 투자권유 아님 면책 1문장\n"
     )
 
 
 def _build_headline(selected: list[ScoredDisclosure]) -> str:
     first = selected[0]
     if len(selected) == 1:
-        return f"{first.disclosure.company_name} 공시 심층: {first.event_type}의 중장기 함의"
+        return f"{first.disclosure.company_name} 공시 심층: 장기 가치에 미치는 실질 영향"
     second = selected[1]
     return (
         f"오늘의 핵심 공시 2선: {first.disclosure.company_name}·"
-        f"{second.disclosure.company_name} 이슈의 구조적 파장"
+        f"{second.disclosure.company_name}의 장기 가치 재평가 포인트"
     )
 
 
 def _build_summary(selected: list[ScoredDisclosure]) -> list[str]:
-    lines = ["## 핵심 요약"]
-    for item in selected:
-        lines.append(
-            f"- {item.disclosure.company_name}: {item.event_type} ({item.total_score:.1f}점)"
+    joined = ", ".join(
+        [f"{item.disclosure.company_name}({item.event_type})" for item in selected]
+    )
+    avg_score = sum(item.total_score for item in selected) / max(len(selected), 1)
+
+    return [
+        "## 핵심 요약",
+        f"- 오늘 핵심 이슈: {joined}",
+        (
+            "- 핵심 해석: 단기 변동성보다 자본구조·현금흐름·거버넌스 변화가 "
+            f"중장기 가치(평균 중요도 {avg_score:.1f}점)에 미치는 영향을 중점 분석"
+        ),
+    ]
+
+
+def _detailed_rationale(item: ScoredDisclosure) -> str:
+    disclosure = item.disclosure
+    numbers = _extract_key_numbers(f"{disclosure.title} {disclosure.description}")
+    num_text = ", ".join(numbers[:4]) if numbers else "핵심 숫자 단서 제한적"
+
+    lines = [
+        f"- 이벤트 분류 근거: {item.event_type} / {item.reasons[0] if item.reasons else '분류 근거 제한적'}",
+        (
+            "- 재무 영향 해석: 재무영향 점수 "
+            f"{item.financial_score:.1f}, 지속성 점수 {item.persistence_score:.1f}, "
+            f"신뢰도 점수 {item.confidence_score:.1f}"
+        ),
+        f"- 숫자 단서: {num_text}",
+        (
+            "- 경영적 함의: 해당 공시는 일회성 뉴스보다 자본배분·수익성 구조·"
+            "리스크 관리 체계를 바꿀 수 있는 성격인지가 핵심"
+        ),
+    ]
+    return "\n".join(lines)
+
+
+def _expert_insight(item: ScoredDisclosure) -> str:
+    title = item.disclosure.title
+    text = f"{title} {item.disclosure.description}".replace(" ", "")
+
+    if any(k in text for k in ["유상증자", "전환사채", "신주인수권부사채"]):
+        return (
+            "회계/자본시장 관점에서 핵심은 희석효과와 자금 사용처의 질이다. "
+            "조달 자체보다 조달금이 ROIC를 높이는 투자로 연결되는지, 기존 주주가치 훼손을 상쇄할 만큼 "
+            "현금흐름 개선이 가능한지가 장기 밸류에이션의 분기점이다."
         )
-    lines.append("- 단기 변동성보다 이익체력·자본구조·거버넌스 변화의 지속성에 초점을 맞춤")
-    return lines
 
+    if any(k in text for k in ["감사의견", "의견거절", "부적정", "한정"]):
+        return (
+            "핵심은 손익 숫자보다 신뢰성 프리미엄의 훼손 여부다. "
+            "감사 이슈는 자금조달 비용과 거래상대방 신뢰에 연쇄적으로 영향을 주기 때문에, "
+            "이후 해소 공시의 속도와 강도가 기업가치 회복 속도를 좌우한다."
+        )
 
-def _long_term_view(item: ScoredDisclosure) -> str:
+    if any(k in text for k in ["공급계약", "수주", "단일판매"]):
+        return (
+            "수주 공시는 매출 증가 자체보다 수익성의 질이 중요하다. "
+            "계약 단가·원가 구조·납기 리스크를 감안했을 때 실제 영업현금흐름으로 이어지는지 확인해야 하며, "
+            "백로그가 이익 가시성으로 전환되는 속도가 장기 주가의 핵심 변수다."
+        )
+
+    if any(k in text for k in ["합병", "분할", "인수", "영업양수", "영업양도"]):
+        return (
+            "사업재편 공시는 EPS 효과만 보면 왜곡될 수 있다. "
+            "진짜 포인트는 사업 포트폴리오의 리스크/수익 구조가 개선되는지, "
+            "그리고 통합 이후 고정비 효율화와 자본회전율 개선이 가능한지다."
+        )
+
     return (
-        f"이번 공시는 `{item.event_type}` 성격으로 분류됐다. "
-        f"이벤트 점수({item.event_score:.1f})와 지속성 점수({item.persistence_score:.1f})가 높아 "
-        "단기 뉴스플로우를 넘어 중기 실적 추정치 및 밸류에이션 가정 변경 가능성이 있다."
+        "전문가 관점의 핵심은 공시 문구의 수사보다 숫자와 실행 가능성이다. "
+        "회사가 제시한 계획이 실제 분기 실적과 현금흐름으로 검증될 때만 장기 가치 재평가가 정당화된다."
     )
 
 
-def _scenario_view(item: ScoredDisclosure) -> str:
+def _investor_impact(item: ScoredDisclosure) -> tuple[str, str]:
+    text = f"{item.disclosure.title} {item.disclosure.description}".replace(" ", "")
+
+    negative = [
+        "유상증자",
+        "전환사채",
+        "신주인수권부사채",
+        "감사의견",
+        "의견거절",
+        "부적정",
+        "한정",
+        "상장폐지",
+        "영업정지",
+        "회생",
+    ]
+    positive = [
+        "무상증자",
+        "배당",
+        "자기주식취득",
+        "소각",
+        "공급계약",
+        "수주",
+        "실적개선",
+        "흑자",
+    ]
+
+    has_neg = any(k in text for k in negative)
+    has_pos = any(k in text for k in positive)
+
+    if has_neg and not has_pos:
+        return (
+            "부정적",
+            "주주가치 희석·회계 신뢰성 훼손·재무 리스크 확대 가능성이 커 보수적 접근이 필요함",
+        )
+    if has_pos and not has_neg:
+        return (
+            "긍정적",
+            "중장기 이익체력 또는 주주환원 기대를 높이는 요인이 상대적으로 우세함",
+        )
     return (
-        "- Base: 공시 내용이 계획대로 집행되며 기존 추정치가 점진적으로 조정되는 경우\n"
-        "- Bull: 집행 속도와 수익성 개선이 동시에 확인되어 멀티플 재평가가 발생하는 경우\n"
-        "- Bear: 공시 이행 지연, 비용 확대, 규제/회계 리스크가 재부각되는 경우"
+        "중립적",
+        "가치 영향이 상쇄될 수 있어 후속 집행 결과와 분기 실적 확인이 필요함",
     )
 
 
-def _follow_up_view(item: ScoredDisclosure) -> str:
-    return (
-        "1) 후속 정정공시/첨부정정 여부\n"
-        "2) 분기 실적 공시에서의 숫자 반영 속도\n"
-        "3) 자금조달/부채비율/현금흐름 등 재무지표의 실제 변화"
-    )
+def _related_news_summary(news_items: list[NewsItem], company_name: str) -> str:
+    if not news_items:
+        return (
+            "- 관련 보도를 찾지 못했습니다.\n"
+            "- 시장 반응 해석을 위해 같은 이슈 키워드로 추가 검색이 필요합니다."
+        )
+
+    lines: list[str] = []
+    for news in news_items[:2]:
+        source = news.source or "출처 미상"
+        date = news.published_at or "날짜 미상"
+        lines.append(
+            f"- [{news.title}]({news.link}) ({source}, {date}) - "
+            f"{company_name} 이슈와 연결된 후속 보도 여부를 확인할 수 있는 기사"
+        )
+
+    if len(news_items) == 1:
+        lines.append("- 추가 1건은 동일 키워드에서 신뢰 가능한 보도 확인이 필요합니다.")
+
+    return "\n".join(lines)
+
+
+def _extract_key_numbers(text: str) -> list[str]:
+    pattern = re.compile(r"\d+(?:[.,]\d+)?\s*(?:조|억|백만|천만|만원|원|%)")
+    return [match.group(0) for match in pattern.finditer(text)]
 
 
 def _passes_fact_gate(article: str, selected: list[ScoredDisclosure]) -> bool:
     if not article.strip():
         return False
 
+    if "관련 뉴스 요약" not in article:
+        return False
+
     for item in selected:
-        d = item.disclosure
-        if d.company_name not in article:
-            return False
-        if d.receipt_no not in article:
-            return False
-        if d.link not in article:
+        if item.disclosure.company_name not in article:
             return False
 
     return True
