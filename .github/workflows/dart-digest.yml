@@ -52,6 +52,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Ensure data directory
+        run: mkdir -p data
+
+      - name: Restore disclosure state cache
+        uses: actions/cache@v4
+        with:
+          path: data/dart_digest.db
+          key: dart-digest-db-${{ github.ref_name }}-${{ github.run_number }}
+          restore-keys: |
+            dart-digest-db-${{ github.ref_name }}-
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:

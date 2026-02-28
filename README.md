@@ -98,6 +98,7 @@ git push -u origin main
 - 처리 이력이 있는 `receipt_no` 공시는 다음 실행에서 제외합니다.
 - 따라서 같은 날 2회(10:10/18:10) 실행해도 이전에 본 공시는 다시 발행하지 않습니다.
 - 강제 재처리가 필요하면 `--force` 옵션을 사용합니다.
+- GitHub Actions에서는 `data/dart_digest.db`를 cache로 복원/저장하여 실행 간 중복 제외 상태를 유지합니다.
 
 ## Scheduling
 
