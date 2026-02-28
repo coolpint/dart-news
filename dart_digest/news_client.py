@@ -127,7 +127,6 @@ def _rank_news(
 ) -> list[NewsItem]:
     now_ts = datetime.now(timezone.utc).timestamp()
     company = company_name.replace(" ", "")
-    issue_keywords = _build_issue_keywords(disclosure_title, event_type)
 
     scored: list[tuple[float, NewsItem]] = []
     for item in items:
@@ -137,50 +136,23 @@ def _rank_news(
         if company and company in title_compact:
             score += 5.0
 
-        for kw in issue_keywords:
-            if kw and kw in title_compact:
-                score += 2.0
-
-        if any(k in title_compact for k in ["적자전환", "흑자전환", "영업손실", "당기순손실"]):
-            score += 2.5
-
-        if item.published_ts > 0:
-            age_days = (now_ts - item.published_ts) / 86400.0
-            if age_days > 365:
-                continue
-            if age_days <= 30:
-                score += 3.0
-            elif age_days <= 90:
-                score += 2.0
-            elif age_days <= 180:
-                score += 1.0
+        # Investment relevance rule: only keep recent articles within 30 days.
+        if item.published_ts <= 0:
+            continue
+        age_days = (now_ts - item.published_ts) / 86400.0
+        if age_days > 30:
+            continue
+        if age_days <= 7:
+            score += 4.0
+        elif age_days <= 14:
+            score += 3.0
+        else:
+            score += 2.0
 
         scored.append((score, item))
 
     scored.sort(key=lambda x: (x[0], x[1].published_ts), reverse=True)
     return [item for _, item in scored]
-
-
-def _build_issue_keywords(disclosure_title: str, event_type: str) -> list[str]:
-    compact = disclosure_title.replace(" ", "")
-    keywords: list[str] = []
-    for kw in ["적자전환", "흑자전환", "영업손실", "당기순손실", "유상증자", "감사의견", "수주", "공급계약"]:
-        if kw in compact:
-            keywords.append(kw)
-
-    event_defaults = {
-        "지배구조/자본변동": ["유상증자", "전환사채", "희석"],
-        "M&A/사업재편": ["합병", "인수", "분할"],
-        "감사/리스크": ["감사의견", "의견거절", "리스크"],
-        "수주/계약": ["수주", "공급계약"],
-        "실적/전망": ["실적", "영업이익", "적자전환", "흑자전환"],
-        "지배주주/특수관계": ["최대주주", "지배구조"],
-        "주주환원": ["배당", "자사주"],
-    }
-    keywords.extend(event_defaults.get(event_type, []))
-
-    # Deduplicate while preserving order.
-    return list(dict.fromkeys(keywords))
 
 
 def _format_pub_date(raw: str) -> str:

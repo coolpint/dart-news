@@ -17,7 +17,6 @@ class IssueContext:
     profitability_signal: str
     company_plan_signal: str
     core_business_headwind: str
-    evidence: list[str]
 
 
 class ArticleWriter:
@@ -192,7 +191,6 @@ def _build_user_prompt(
                     "profitability_signal": issue_ctx.profitability_signal,
                     "company_plan_signal": issue_ctx.company_plan_signal,
                     "core_business_headwind": issue_ctx.core_business_headwind,
-                    "evidence": issue_ctx.evidence,
                 },
                 "investor_view": {
                     "label": sentiment,
@@ -269,10 +267,6 @@ def _detailed_rationale(item: ScoredDisclosure, issue_ctx: IssueContext) -> str:
         f"- 손익 구조 변화: {issue_ctx.profitability_signal}",
         f"- 회사가 제시한 향후 계획: {issue_ctx.company_plan_signal}",
         f"- 현재 주력 사업의 어려움: {issue_ctx.core_business_headwind}",
-        (
-            "- 텍스트/뉴스 근거 키워드: "
-            + (", ".join(issue_ctx.evidence[:5]) if issue_ctx.evidence else "직접 포착된 키워드 제한적")
-        ),
         (
             "- 경영적 함의: 해당 공시는 일회성 뉴스보다 자본배분·수익성 구조·"
             "리스크 관리 체계를 바꿀 수 있는 성격인지가 핵심"
@@ -389,7 +383,7 @@ def _related_news_summary(
     if not news_items:
         return (
             "- 관련 보도를 찾지 못했습니다.\n"
-            "- 시장 반응 해석을 위해 같은 이슈 키워드로 추가 검색이 필요합니다."
+            "- 최근 1개월 이내 보도 기준에서 확인 가능한 후속 기사가 제한적입니다."
         )
 
     lines: list[str] = []
@@ -402,7 +396,7 @@ def _related_news_summary(
         )
 
     if len(news_items) == 1:
-        lines.append("- 추가 1건은 동일 키워드에서 신뢰 가능한 보도 확인이 필요합니다.")
+        lines.append("- 추가 1건은 최근 보도 부족으로 확인되지 않았습니다.")
 
     return "\n".join(lines)
 
@@ -417,16 +411,10 @@ def _build_issue_context(item: ScoredDisclosure, news_items: list[NewsItem]) -> 
     company_plan_signal = _company_plan_signal(corpus)
     core_business_headwind = _core_business_headwind(corpus)
 
-    evidence: list[str] = []
-    evidence.extend(_extract_signal_evidence(news_title_text, ["적자전환", "흑자전환", "영업손실", "당기순손실"]))
-    evidence.extend(_extract_signal_evidence(text, ["신사업", "사업전환", "사업다각화", "증설", "투자"]))
-    evidence.extend(_extract_signal_evidence(text, ["원가상승", "수요둔화", "재고", "가동률", "판가하락", "경쟁심화"]))
-
     return IssueContext(
         profitability_signal=profitability_signal,
         company_plan_signal=company_plan_signal,
         core_business_headwind=core_business_headwind,
-        evidence=list(dict.fromkeys(evidence)),
     )
 
 
@@ -480,10 +468,6 @@ def _core_business_headwind(corpus: str) -> str:
     if matched:
         return f"주력 사업에서 {', '.join(list(dict.fromkeys(matched))[:3])} 부담이 포착됨"
     return "주력 사업의 난관은 공시에 정량적으로 충분히 드러나지 않아 후속 설명이 필요함"
-
-
-def _extract_signal_evidence(text: str, keywords: list[str]) -> list[str]:
-    return [kw for kw in keywords if kw in text]
 
 
 def _summarize_news_title(title: str, company_name: str, issue_ctx: IssueContext) -> str:
