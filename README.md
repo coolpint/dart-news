@@ -56,6 +56,7 @@ python3 -m dart_digest.cli run
    - `SLACK_WEBHOOK_URL` (권장: 필수)
    - `SLACK_CHANNEL` (선택)
    - `OPENAI_API_KEY` (선택)
+   - `DART_API_KEY` (선택: 과거 날짜 백테스트 시 필요)
 3. Actions 탭에서 `DART Daily Insights` 워크플로를 수동 실행(`Run workflow`)해 검증합니다.
 4. 문제 없으면 스케줄 실행을 사용합니다. 기본 스케줄은 `매일 10:10 KST, 18:10 KST`입니다.
 
@@ -105,6 +106,19 @@ python3 scripts/update_company_map.py --output data/company_map.csv
 - 따라서 같은 날 2회(10:10/18:10) 실행해도 이전에 본 공시는 다시 발행하지 않습니다.
 - 강제 재처리가 필요하면 `--force` 옵션을 사용합니다.
 - GitHub Actions에서는 `data/dart_digest.db`를 cache로 복원/저장하여 실행 간 중복 제외 상태를 유지합니다.
+
+## Historical backtest
+
+`todayRSS.xml`은 과거 날짜 조회를 지원하지 않으므로, 과거 테스트는 OpenDART 일자 조회 API를 사용합니다.
+
+로컬:
+
+```bash
+python3 -m dart_digest.cli run --date 20260227 --dry-run --print-article --force
+```
+
+- `--date YYYYMMDD` 사용 시 `DART_API_KEY`가 필요합니다.
+- GitHub Actions 수동 실행에서도 `test_date` 입력으로 동일 기능을 사용할 수 있습니다.
 
 ## Scheduling
 

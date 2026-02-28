@@ -41,6 +41,7 @@ class Settings:
     db_path: Path
     company_map_path: Path
     target_markets: tuple[str, ...]
+    dart_api_key: str | None
     timezone: str
     top_n_max: int
     second_pick_min_score: float
@@ -66,6 +67,7 @@ class Settings:
             ),
             target_markets=_get_csv_list("DART_TARGET_MARKETS", "KOSPI,KOSDAQ")
             or ("KOSPI", "KOSDAQ"),
+            dart_api_key=os.getenv("DART_API_KEY"),
             timezone=os.getenv("DART_TIMEZONE", "Asia/Seoul"),
             top_n_max=max(1, min(2, _get_int("DART_TOP_N_MAX", 2))),
             second_pick_min_score=_get_float("DART_SECOND_PICK_MIN_SCORE", 78.0),

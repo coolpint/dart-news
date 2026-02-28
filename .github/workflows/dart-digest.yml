@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: false
+      test_date:
+        description: "Optional backtest date (YYYYMMDD, requires DART_API_KEY secret)"
+        required: false
+        type: string
 
 concurrency:
   group: dart-digest-${{ github.ref }}
@@ -48,6 +52,7 @@ jobs:
       DART_REQUIRE_SLACK_WEBHOOK: "true"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: gpt-4.1-mini
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
     steps:
       - name: Checkout
@@ -93,6 +98,7 @@ jobs:
             if [ "${{ inputs.force }}" = "true" ]; then args="$args --force"; fi
             if [ "${{ inputs.dry_run }}" = "true" ]; then args="$args --dry-run"; fi
             if [ "${{ inputs.print_article }}" = "true" ]; then args="$args --print-article"; fi
+            if [ -n "${{ inputs.test_date }}" ]; then args="$args --date ${{ inputs.test_date }}"; fi
           fi
 
           echo "python -m dart_digest.cli run $args"

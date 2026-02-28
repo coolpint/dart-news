@@ -9,6 +9,7 @@ from dart_digest.config import Settings
 from dart_digest.dart_client import fetch_today_rss, parse_disclosures
 from dart_digest.market_filter import CompanyUniverse, MarketFilter
 from dart_digest.models import DailySelection, ScoredDisclosure
+from dart_digest.open_dart_client import fetch_disclosures_by_date
 from dart_digest.scoring import score_disclosures
 from dart_digest.slack_client import SlackPublisher
 from dart_digest.storage import Storage
@@ -33,7 +34,7 @@ class DigestPipeline:
             channel=settings.slack_channel,
         )
 
-    def run(self, force: bool = False) -> PipelineResult:
+    def run(self, force: bool = False, test_date: str | None = None) -> PipelineResult:
         run_dt = datetime.now(ZoneInfo(self.settings.timezone)).replace(tzinfo=None)
         if (
             not self.settings.dry_run
@@ -44,12 +45,28 @@ class DigestPipeline:
                 "SLACK_WEBHOOK_URL is missing while DART_REQUIRE_SLACK_WEBHOOK=true."
             )
 
-        rss_xml = fetch_today_rss(self.settings.rss_url)
-        disclosures = parse_disclosures(rss_xml)
+        if test_date:
+            if not self.settings.dart_api_key:
+                raise RuntimeError(
+                    "DART_API_KEY is required when running with --date YYYYMMDD."
+                )
+            disclosures = fetch_disclosures_by_date(
+                target_date=test_date,
+                api_key=self.settings.dart_api_key,
+                target_markets=self.settings.target_markets,
+            )
+        else:
+            rss_xml = fetch_today_rss(self.settings.rss_url)
+            disclosures = parse_disclosures(rss_xml)
+
         if not disclosures:
             result = PipelineResult(
                 status="skipped",
-                message="No disclosures in DART RSS feed.",
+                message=(
+                    f"No disclosures found for date {test_date}."
+                    if test_date
+                    else "No disclosures in DART RSS feed."
+                ),
             )
             self._notify_skip(result, run_dt)
             return result

@@ -21,6 +21,7 @@ def test_pipeline_skips_already_processed_disclosures(tmp_path: Path) -> None:
         db_path=db_path,
         company_map_path=csv_path,
         target_markets=("KOSPI", "KOSDAQ"),
+        dart_api_key=None,
         timezone="Asia/Seoul",
         top_n_max=2,
         second_pick_min_score=70.0,

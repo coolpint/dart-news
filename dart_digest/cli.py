@@ -28,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print generated article to stdout.",
     )
+    parser.add_argument(
+        "--date",
+        help="Historical date for backtest in YYYYMMDD (uses OpenDART list API).",
+    )
     return parser
 
 
@@ -42,7 +46,7 @@ def main() -> int:
     pipeline = DigestPipeline(settings)
 
     try:
-        result = pipeline.run(force=args.force)
+        result = pipeline.run(force=args.force, test_date=args.date)
     except Exception as exc:  # noqa: BLE001
         print(f"[error] {exc}", file=sys.stderr)
         return 1
