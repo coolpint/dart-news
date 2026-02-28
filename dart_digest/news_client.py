@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from typing import Iterable
 from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
@@ -18,6 +19,7 @@ class NewsItem:
     link: str
     source: str
     published_at: str
+    published_ts: float
 
 
 def search_related_news(
@@ -47,7 +49,8 @@ def search_related_news(
 
     items = parse_google_news_rss(response.text)
     filtered = _filter_relevant_news(items, company_name)
-    return filtered[:max_items]
+    ranked = _rank_news(filtered, company_name, disclosure_title, event_type)
+    return ranked[:max_items]
 
 
 def parse_google_news_rss(rss_xml: str) -> list[NewsItem]:
@@ -71,6 +74,7 @@ def parse_google_news_rss(rss_xml: str) -> list[NewsItem]:
                 link=link,
                 source=source,
                 published_at=_format_pub_date(pub_date),
+                published_ts=_parse_pub_ts(pub_date),
             )
         )
 
@@ -115,6 +119,70 @@ def _filter_relevant_news(items: Iterable[NewsItem], company_name: str) -> list[
     return list(dedup.values())
 
 
+def _rank_news(
+    items: Iterable[NewsItem],
+    company_name: str,
+    disclosure_title: str,
+    event_type: str,
+) -> list[NewsItem]:
+    now_ts = datetime.now(timezone.utc).timestamp()
+    company = company_name.replace(" ", "")
+    issue_keywords = _build_issue_keywords(disclosure_title, event_type)
+
+    scored: list[tuple[float, NewsItem]] = []
+    for item in items:
+        title_compact = item.title.replace(" ", "")
+        score = 0.0
+
+        if company and company in title_compact:
+            score += 5.0
+
+        for kw in issue_keywords:
+            if kw and kw in title_compact:
+                score += 2.0
+
+        if any(k in title_compact for k in ["적자전환", "흑자전환", "영업손실", "당기순손실"]):
+            score += 2.5
+
+        if item.published_ts > 0:
+            age_days = (now_ts - item.published_ts) / 86400.0
+            if age_days > 365:
+                continue
+            if age_days <= 30:
+                score += 3.0
+            elif age_days <= 90:
+                score += 2.0
+            elif age_days <= 180:
+                score += 1.0
+
+        scored.append((score, item))
+
+    scored.sort(key=lambda x: (x[0], x[1].published_ts), reverse=True)
+    return [item for _, item in scored]
+
+
+def _build_issue_keywords(disclosure_title: str, event_type: str) -> list[str]:
+    compact = disclosure_title.replace(" ", "")
+    keywords: list[str] = []
+    for kw in ["적자전환", "흑자전환", "영업손실", "당기순손실", "유상증자", "감사의견", "수주", "공급계약"]:
+        if kw in compact:
+            keywords.append(kw)
+
+    event_defaults = {
+        "지배구조/자본변동": ["유상증자", "전환사채", "희석"],
+        "M&A/사업재편": ["합병", "인수", "분할"],
+        "감사/리스크": ["감사의견", "의견거절", "리스크"],
+        "수주/계약": ["수주", "공급계약"],
+        "실적/전망": ["실적", "영업이익", "적자전환", "흑자전환"],
+        "지배주주/특수관계": ["최대주주", "지배구조"],
+        "주주환원": ["배당", "자사주"],
+    }
+    keywords.extend(event_defaults.get(event_type, []))
+
+    # Deduplicate while preserving order.
+    return list(dict.fromkeys(keywords))
+
+
 def _format_pub_date(raw: str) -> str:
     if not raw:
         return ""
@@ -124,6 +192,17 @@ def _format_pub_date(raw: str) -> str:
         return dt.strftime("%Y-%m-%d")
     except (TypeError, ValueError):
         return raw
+
+
+def _parse_pub_ts(raw: str) -> float:
+    if not raw:
+        return 0.0
+
+    try:
+        dt = parsedate_to_datetime(raw)
+        return dt.timestamp()
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _safe_text(element: ET.Element | None) -> str:

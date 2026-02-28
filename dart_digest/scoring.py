@@ -76,27 +76,34 @@ def score_disclosures(disclosures: list[Disclosure]) -> list[ScoredDisclosure]:
 def score_disclosure(disclosure: Disclosure) -> ScoredDisclosure:
     title = disclosure.title
     body = f"{disclosure.title}\n{disclosure.description}"
+    market = str(disclosure.raw.get("market") or "").upper()
 
     event_type, event_score, persistence_score, reasons = _score_event(title)
     financial_score, financial_reason = _score_financial_impact(body)
     confidence_score, confidence_reason = _score_confidence(title, body)
+    market_bonus = 5.0 if market == "KOSPI" else 0.0
 
     reasons.extend([financial_reason, confidence_reason])
+    if market_bonus > 0:
+        reasons.append("시장 관심도 가중치: KOSPI +5점 반영")
 
-    total = (
+    base_total = (
         event_score * 0.45
         + financial_score * 0.30
         + persistence_score * 0.15
         + confidence_score * 0.10
     )
+    total = base_total + market_bonus
 
     return ScoredDisclosure(
         disclosure=disclosure,
+        market=market or "UNKNOWN",
         event_type=event_type,
         event_score=event_score,
         financial_score=financial_score,
         persistence_score=persistence_score,
         confidence_score=confidence_score,
+        market_bonus=market_bonus,
         total_score=round(total, 2),
         reasons=[reason for reason in reasons if reason],
     )

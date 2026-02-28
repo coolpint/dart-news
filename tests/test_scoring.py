@@ -34,3 +34,21 @@ def test_generic_event_scores_lower() -> None:
     scored = score_disclosure(disclosure)
 
     assert scored.total_score < 80
+
+
+def test_kospi_market_bonus_added() -> None:
+    kosdaq = _build_disclosure(
+        "테스트회사 (잠정실적 공시)",
+        "매출액 30% 증가, 영업이익 15% 감소",
+    )
+    kospi = _build_disclosure(
+        "테스트회사 (잠정실적 공시)",
+        "매출액 30% 증가, 영업이익 15% 감소",
+    )
+    kospi.raw["market"] = "KOSPI"
+    kosdaq.raw["market"] = "KOSDAQ"
+
+    scored_kosdaq = score_disclosure(kosdaq)
+    scored_kospi = score_disclosure(kospi)
+
+    assert scored_kospi.total_score == round(scored_kosdaq.total_score + 5.0, 2)

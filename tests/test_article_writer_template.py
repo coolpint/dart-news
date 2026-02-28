@@ -36,11 +36,13 @@ def test_template_excludes_receipt_no_and_scenario() -> None:
     )
     scored = ScoredDisclosure(
         disclosure=disclosure,
+        market="KOSPI",
         event_type="지배구조/자본변동",
         event_score=95.0,
         financial_score=90.0,
         persistence_score=88.0,
         confidence_score=80.0,
+        market_bonus=5.0,
         total_score=90.4,
         reasons=["자본구조 변화는 희석/레버리지/주주가치에 중장기 영향을 줄 가능성이 큼"],
     )

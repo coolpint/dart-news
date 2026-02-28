@@ -79,6 +79,8 @@ class MarketFilter:
         for item in disclosures:
             company = self.universe.get_company(item.company_name)
             if company and company.market in self.target_markets:
+                item.raw["market"] = company.market
+                item.raw["ticker"] = company.ticker
                 filtered.append(item)
         return filtered
 

@@ -19,11 +19,13 @@ class Disclosure:
 @dataclass
 class ScoredDisclosure:
     disclosure: Disclosure
+    market: str
     event_type: str
     event_score: float
     financial_score: float
     persistence_score: float
     confidence_score: float
+    market_bonus: float
     total_score: float
     reasons: list[str]
 
