@@ -37,7 +37,7 @@ jobs:
 
     env:
       DART_TIMEZONE: Asia/Seoul
-      DART_COMPANY_MAP_PATH: ./data/kospi_companies_sample.csv
+      DART_COMPANY_MAP_PATH: ./data/company_map.csv
       DART_TARGET_MARKETS: KOSPI,KOSDAQ
       DART_DB_PATH: ./data/dart_digest.db
       DART_TOP_N_MAX: "2"
@@ -72,6 +72,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .
+
+      - name: Refresh company universe (KOSPI/KOSDAQ)
+        run: |
+          python scripts/update_company_map.py --output data/company_map.csv
+          wc -l data/company_map.csv
 
       - name: Run digest
         run: |

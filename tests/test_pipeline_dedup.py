@@ -29,6 +29,7 @@ def test_pipeline_skips_already_processed_disclosures(tmp_path: Path) -> None:
         openai_model="gpt-4.1-mini",
         slack_webhook_url=None,
         slack_channel=None,
+        notify_on_skip=False,
         dry_run=True,
     )
 

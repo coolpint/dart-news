@@ -78,12 +78,18 @@ git push -u origin main
 - `ticker`
 - `market` (`KOSPI`/`KOSDAQ` ...)
 
-현재 `data/kospi_companies_sample.csv`는 샘플입니다.
-운영 시에는 전체 상장사 목록으로 교체하세요.
+운영 환경에서는 KRX 목록으로 매 실행 시 자동 갱신하는 `data/company_map.csv`를 사용합니다.
+로컬 테스트용으로 `data/kospi_companies_sample.csv` 샘플 파일도 포함되어 있습니다.
 
 대상 시장은 `DART_TARGET_MARKETS`로 지정합니다.
 
 - 예: `DART_TARGET_MARKETS=KOSPI,KOSDAQ`
+
+회사 목록 수동 갱신(로컬):
+
+```bash
+python3 scripts/update_company_map.py --output data/company_map.csv
+```
 
 ## Selection rule
 
@@ -114,3 +120,4 @@ git push -u origin main
 - 기사 생성은 OpenAI API 키가 있으면 LLM 기반으로 작성합니다.
 - API 키가 없거나 실패하면 템플릿 기반 기사로 자동 폴백합니다.
 - 출력 마지막에 투자권유 아님 면책 문구를 추가합니다.
+- RSS 항목이 없거나 신규 공시가 없으면, 기본값(`DART_NOTIFY_ON_SKIP=true`)으로 Slack에 스킵 사유를 전송합니다.

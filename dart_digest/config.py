@@ -49,6 +49,7 @@ class Settings:
     openai_model: str
     slack_webhook_url: str | None
     slack_channel: str | None
+    notify_on_skip: bool
     dry_run: bool
 
     @classmethod
@@ -72,5 +73,6 @@ class Settings:
             openai_model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
             slack_channel=os.getenv("SLACK_CHANNEL"),
+            notify_on_skip=_get_bool("DART_NOTIFY_ON_SKIP", True),
             dry_run=_get_bool("DRY_RUN", False),
         )

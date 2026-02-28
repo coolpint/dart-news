@@ -38,16 +38,26 @@ class DigestPipeline:
 
         rss_xml = fetch_today_rss(self.settings.rss_url)
         disclosures = parse_disclosures(rss_xml)
+        if not disclosures:
+            result = PipelineResult(
+                status="skipped",
+                message="No disclosures in DART RSS feed.",
+            )
+            self._notify_skip(result, run_dt)
+            return result
+
         market_disclosures = self.market_filter.filter(disclosures)
 
         if not market_disclosures:
-            return PipelineResult(
+            result = PipelineResult(
                 status="skipped",
                 message=(
                     "No disclosures found for target markets: "
                     + ", ".join(self.settings.target_markets)
                 ),
             )
+            self._notify_skip(result, run_dt)
+            return result
 
         candidates = (
             market_disclosures
@@ -59,10 +69,12 @@ class DigestPipeline:
             ]
         )
         if not candidates:
-            return PipelineResult(
+            result = PipelineResult(
                 status="skipped",
                 message="No new disclosures after deduplication.",
             )
+            self._notify_skip(result, run_dt)
+            return result
 
         scored = score_disclosures(candidates)
         for item in scored:
@@ -71,10 +83,12 @@ class DigestPipeline:
         selected = self._pick_top(scored)
 
         if not selected:
-            return PipelineResult(
+            result = PipelineResult(
                 status="skipped",
                 message="No disclosure passed the importance threshold.",
             )
+            self._notify_skip(result, run_dt)
+            return result
 
         article = self.writer.write(selected, run_dt)
         selection = DailySelection(
@@ -102,6 +116,17 @@ class DigestPipeline:
             message=f"Generated report with {len(selected)} disclosure(s).",
             selection=selection,
         )
+
+    def _notify_skip(self, result: PipelineResult, run_dt: datetime) -> None:
+        if self.settings.dry_run or not self.settings.notify_on_skip:
+            return
+
+        message = (
+            f"[DART 심층 리포트] {run_dt.strftime('%Y-%m-%d %H:%M')} 실행 결과\\n"
+            f"- 상태: {result.status}\\n"
+            f"- 사유: {result.message}"
+        )
+        self.publisher.publish_text(message)
 
     def _pick_top(self, scored: list[ScoredDisclosure]) -> list[ScoredDisclosure]:
         if not scored:

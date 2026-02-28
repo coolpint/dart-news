@@ -35,6 +35,21 @@ class SlackPublisher:
 
         return True
 
+    def publish_text(self, text: str) -> bool:
+        if not self.webhook_url:
+            return False
+
+        payload = {"text": text}
+        if self.channel:
+            payload["channel"] = self.channel
+
+        response = requests.post(self.webhook_url, json=payload, timeout=15)
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Slack publish failed: {response.status_code} {response.text[:200]}"
+            )
+        return True
+
     @staticmethod
     def _intro(selected: list[ScoredDisclosure], run_dt: datetime) -> str:
         picked = ", ".join(
