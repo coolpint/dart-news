@@ -35,6 +35,14 @@ class DigestPipeline:
 
     def run(self, force: bool = False) -> PipelineResult:
         run_dt = datetime.now(ZoneInfo(self.settings.timezone)).replace(tzinfo=None)
+        if (
+            not self.settings.dry_run
+            and self.settings.require_slack_webhook
+            and not self.settings.slack_webhook_url
+        ):
+            raise RuntimeError(
+                "SLACK_WEBHOOK_URL is missing while DART_REQUIRE_SLACK_WEBHOOK=true."
+            )
 
         rss_xml = fetch_today_rss(self.settings.rss_url)
         disclosures = parse_disclosures(rss_xml)
@@ -102,6 +110,10 @@ class DigestPipeline:
         if not self.settings.dry_run:
             sent = self.publisher.publish(article, selected, run_dt)
             if not sent:
+                if self.settings.require_slack_webhook:
+                    raise RuntimeError(
+                        "Slack publish skipped because SLACK_WEBHOOK_URL is missing."
+                    )
                 return PipelineResult(
                     status="completed",
                     message=(
@@ -126,7 +138,11 @@ class DigestPipeline:
             f"- 상태: {result.status}\\n"
             f"- 사유: {result.message}"
         )
-        self.publisher.publish_text(message)
+        sent = self.publisher.publish_text(message)
+        if not sent and self.settings.require_slack_webhook:
+            raise RuntimeError(
+                "Skip notification was not sent because SLACK_WEBHOOK_URL is missing."
+            )
 
     def _pick_top(self, scored: list[ScoredDisclosure]) -> list[ScoredDisclosure]:
         if not scored:

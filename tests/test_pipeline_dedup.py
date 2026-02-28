@@ -30,6 +30,7 @@ def test_pipeline_skips_already_processed_disclosures(tmp_path: Path) -> None:
         slack_webhook_url=None,
         slack_channel=None,
         notify_on_skip=False,
+        require_slack_webhook=False,
         dry_run=True,
     )
 

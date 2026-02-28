@@ -50,6 +50,7 @@ class Settings:
     slack_webhook_url: str | None
     slack_channel: str | None
     notify_on_skip: bool
+    require_slack_webhook: bool
     dry_run: bool
 
     @classmethod
@@ -74,5 +75,6 @@ class Settings:
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
             slack_channel=os.getenv("SLACK_CHANNEL"),
             notify_on_skip=_get_bool("DART_NOTIFY_ON_SKIP", True),
+            require_slack_webhook=_get_bool("DART_REQUIRE_SLACK_WEBHOOK", False),
             dry_run=_get_bool("DRY_RUN", False),
         )

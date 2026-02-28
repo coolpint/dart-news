@@ -121,3 +121,4 @@ python3 scripts/update_company_map.py --output data/company_map.csv
 - API 키가 없거나 실패하면 템플릿 기반 기사로 자동 폴백합니다.
 - 출력 마지막에 투자권유 아님 면책 문구를 추가합니다.
 - RSS 항목이 없거나 신규 공시가 없으면, 기본값(`DART_NOTIFY_ON_SKIP=true`)으로 Slack에 스킵 사유를 전송합니다.
+- GitHub Actions에서는 `DART_REQUIRE_SLACK_WEBHOOK=true`로 실행되어, 웹훅 시크릿이 비어 있으면 워크플로를 실패시켜 원인을 바로 확인할 수 있습니다.

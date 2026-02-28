@@ -45,12 +45,20 @@ jobs:
       DART_SECOND_PICK_MIN_GAP: "6"
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+      DART_REQUIRE_SLACK_WEBHOOK: "true"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: gpt-4.1-mini
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate Slack webhook secret
+        run: |
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "::error::SLACK_WEBHOOK_URL secret is empty or missing."
+            exit 1
+          fi
 
       - name: Ensure data directory
         run: mkdir -p data
