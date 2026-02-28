@@ -60,17 +60,32 @@ class CompanyUniverse:
         return self.items.get(relaxed)
 
 
-class KospiFilter:
-    def __init__(self, universe: CompanyUniverse) -> None:
+class MarketFilter:
+    def __init__(
+        self,
+        universe: CompanyUniverse,
+        target_markets: set[str] | tuple[str, ...] | None = None,
+    ) -> None:
         self.universe = universe
+        if target_markets:
+            self.target_markets = {
+                market.strip().upper() for market in target_markets if market.strip()
+            } or {"KOSPI"}
+        else:
+            self.target_markets = {"KOSPI"}
 
     def filter(self, disclosures: list[Disclosure]) -> list[Disclosure]:
         filtered: list[Disclosure] = []
         for item in disclosures:
             company = self.universe.get_company(item.company_name)
-            if company and company.market == "KOSPI":
+            if company and company.market in self.target_markets:
                 filtered.append(item)
         return filtered
+
+
+class KospiFilter(MarketFilter):
+    def __init__(self, universe: CompanyUniverse) -> None:
+        super().__init__(universe=universe, target_markets={"KOSPI"})
 
 
 def normalize_name(name: str) -> str:

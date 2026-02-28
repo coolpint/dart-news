@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Generate report even if today's report already exists.",
+        help="Include previously processed disclosures (skip dedup filter).",
     )
     parser.add_argument(
         "--dry-run",

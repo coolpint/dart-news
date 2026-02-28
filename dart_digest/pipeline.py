@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from dart_digest.article_writer import ArticleWriter
 from dart_digest.config import Settings
 from dart_digest.dart_client import fetch_today_rss, parse_disclosures
-from dart_digest.market_filter import CompanyUniverse, KospiFilter
+from dart_digest.market_filter import CompanyUniverse, MarketFilter
 from dart_digest.models import DailySelection, ScoredDisclosure
 from dart_digest.scoring import score_disclosures
 from dart_digest.slack_client import SlackPublisher
@@ -26,7 +26,7 @@ class DigestPipeline:
         self.settings = settings
         self.storage = Storage(settings.db_path)
         self.universe = CompanyUniverse.from_csv(settings.company_map_path)
-        self.market_filter = KospiFilter(self.universe)
+        self.market_filter = MarketFilter(self.universe, settings.target_markets)
         self.writer = ArticleWriter(settings)
         self.publisher = SlackPublisher(
             webhook_url=settings.slack_webhook_url,
@@ -35,22 +35,39 @@ class DigestPipeline:
 
     def run(self, force: bool = False) -> PipelineResult:
         run_dt = datetime.now(ZoneInfo(self.settings.timezone)).replace(tzinfo=None)
-        report_date = run_dt.date().isoformat()
-
-        if not force and self.storage.report_exists(report_date):
-            return PipelineResult(
-                status="skipped",
-                message=f"{report_date} report already exists; skipping.",
-            )
 
         rss_xml = fetch_today_rss(self.settings.rss_url)
         disclosures = parse_disclosures(rss_xml)
-        kospi_disclosures = self.market_filter.filter(disclosures)
+        market_disclosures = self.market_filter.filter(disclosures)
 
-        if not kospi_disclosures:
-            return PipelineResult(status="skipped", message="No KOSPI disclosures found.")
+        if not market_disclosures:
+            return PipelineResult(
+                status="skipped",
+                message=(
+                    "No disclosures found for target markets: "
+                    + ", ".join(self.settings.target_markets)
+                ),
+            )
 
-        scored = score_disclosures(kospi_disclosures)
+        candidates = (
+            market_disclosures
+            if force
+            else [
+                item
+                for item in market_disclosures
+                if not self.storage.is_processed(item.receipt_no)
+            ]
+        )
+        if not candidates:
+            return PipelineResult(
+                status="skipped",
+                message="No new disclosures after deduplication.",
+            )
+
+        scored = score_disclosures(candidates)
+        for item in scored:
+            self.storage.mark_processed(item)
+
         selected = self._pick_top(scored)
 
         if not selected:
@@ -67,8 +84,6 @@ class DigestPipeline:
         )
 
         self.storage.save_report(selection)
-        for item in scored:
-            self.storage.mark_processed(item)
 
         if not self.settings.dry_run:
             sent = self.publisher.publish(article, selected, run_dt)

@@ -2,12 +2,14 @@ name: DART Daily Insights
 
 on:
   schedule:
+    # 10:10 KST daily (01:10 UTC)
+    - cron: "10 1 * * *"
     # 18:10 KST daily (09:10 UTC)
     - cron: "10 9 * * *"
   workflow_dispatch:
     inputs:
       force:
-        description: "Force run even if report exists for today"
+        description: "Include already-processed disclosures"
         required: false
         type: boolean
         default: false
@@ -36,6 +38,7 @@ jobs:
     env:
       DART_TIMEZONE: Asia/Seoul
       DART_COMPANY_MAP_PATH: ./data/kospi_companies_sample.csv
+      DART_TARGET_MARKETS: KOSPI,KOSDAQ
       DART_DB_PATH: ./data/dart_digest.db
       DART_TOP_N_MAX: "2"
       DART_SECOND_PICK_MIN_SCORE: "78"

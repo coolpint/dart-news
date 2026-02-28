@@ -91,7 +91,7 @@ class Storage:
             return row is not None
 
     def save_report(self, selection: DailySelection) -> None:
-        report_date = selection.run_date.date().isoformat()
+        report_date = selection.run_date.isoformat(timespec="seconds")
         receipt_nos = [item.disclosure.receipt_no for item in selection.selected]
         with self._connect() as conn:
             conn.execute(
