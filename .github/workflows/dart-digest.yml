@@ -1,0 +1,81 @@
+name: DART Daily Insights
+
+on:
+  schedule:
+    # 18:10 KST daily (09:10 UTC)
+    - cron: "10 9 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force run even if report exists for today"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Generate report without sending to Slack"
+        required: false
+        type: boolean
+        default: false
+      print_article:
+        description: "Print article to logs"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: dart-digest-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    env:
+      DART_TIMEZONE: Asia/Seoul
+      DART_COMPANY_MAP_PATH: ./data/kospi_companies_sample.csv
+      DART_DB_PATH: ./data/dart_digest.db
+      DART_TOP_N_MAX: "2"
+      DART_SECOND_PICK_MIN_SCORE: "78"
+      DART_SECOND_PICK_MIN_GAP: "6"
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: gpt-4.1-mini
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Run digest
+        run: |
+          args=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.force }}" = "true" ]; then args="$args --force"; fi
+            if [ "${{ inputs.dry_run }}" = "true" ]; then args="$args --dry-run"; fi
+            if [ "${{ inputs.print_article }}" = "true" ]; then args="$args --print-article"; fi
+          fi
+
+          echo "python -m dart_digest.cli run $args"
+          python -m dart_digest.cli run $args
+
+      - name: Upload run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dart-digest-run
+          path: |
+            data/*.db
+          if-no-files-found: ignore
